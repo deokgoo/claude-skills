@@ -1,0 +1,16 @@
+{
+  "name": "confluence-mcp",
+  "version": "1.0.0",
+  "description": "Confluence MCP Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "html-to-text": "^9.0.5",
+    "turndown": "^7.1.2"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
