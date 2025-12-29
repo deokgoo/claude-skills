@@ -17,7 +17,7 @@ class OptimizedJiraMCP {
     // Jira 브라우저 URL (이슈 링크 생성용)
     this.browseUrl = 'https://oyitsm.cj.net/jira/browse';
 
-    // 핵심 필드만 정의 (토큰 사용량 90% 절약)
+    // 핵심 필드 (HTML 파싱 최적화로 토큰 절약)
     this.ESSENTIAL_FIELDS = [
       'key',
       'summary',
@@ -35,43 +35,58 @@ class OptimizedJiraMCP {
       'components'
     ].join(',');
 
-    // 최소 필드 (목록용)
-    this.MINIMAL_FIELDS = [
-      'key',
-      'summary',
-      'status',
-      'assignee',
-      'priority',
-      'issuetype',
-      'updated'
-    ].join(',');
   }
 
-  // 응답 모드별 필드 설정
-  getFieldsForMode(mode = 'standard') {
-    switch (mode) {
-      case 'summary':
-        return this.MINIMAL_FIELDS;
-      case 'full':
-        return null; // 모든 필드
-      case 'standard':
-      default:
-        return this.ESSENTIAL_FIELDS;
-    }
+  // 기본 필드 설정
+  getDefaultFields() {
+    return this.ESSENTIAL_FIELDS;
   }
 
-  // HTML을 깔끔한 텍스트로 변환 (토큰 최적화)
+  // HTML을 깔끔한 텍스트로 변환 (Confluence 수준 강화)
   htmlToText(html) {
     if (!html) return '';
 
-    // HTML 태그 완전 제거 및 텍스트 정리
+    // JIRA HTML 태그 완전 제거 및 텍스트 정리 (Confluence MCP 스타일)
     const cleanText = convert(html, {
-      wordwrap: 120,
+      wordwrap: 130,
+      ignoreHref: true,
+      ignoreImage: true,
       selectors: [
-        // 불필요한 요소들 완전 제거
+        // 메타데이터 및 시스템 태그들 제거
         { selector: 'script', format: 'skip' },
         { selector: 'style', format: 'skip' },
+        { selector: 'noscript', format: 'skip' },
         { selector: 'meta', format: 'skip' },
+        { selector: 'link[rel]', format: 'skip' },
+
+        // JIRA 특화 - 불필요한 메타데이터 및 UI 요소들 제거
+        { selector: '.jira-metadata', format: 'skip' },
+        { selector: '.issue-metadata', format: 'skip' },
+        { selector: '.breadcrumbs', format: 'skip' },
+        { selector: '.navigation', format: 'skip' },
+        { selector: '.toolbar', format: 'skip' },
+        { selector: '.footer', format: 'skip' },
+        { selector: '.header', format: 'skip' },
+        { selector: '.sidebar', format: 'skip' },
+        { selector: '.comments-section', format: 'skip' },
+
+        // 불필요한 div들 제거 (JIRA 특화)
+        { selector: 'div[id*="header"]', format: 'skip' },
+        { selector: 'div[id*="footer"]', format: 'skip' },
+        { selector: 'div[id*="navigation"]', format: 'skip' },
+        { selector: 'div[class*="jira-navigation"]', format: 'skip' },
+        { selector: 'div[class*="issue-metadata"]', format: 'skip' },
+        { selector: 'div[class*="metadata"]', format: 'skip' },
+        { selector: 'div[class*="toolbar"]', format: 'skip' },
+
+        // 멀티미디어 요소들 제거
+        { selector: 'iframe', format: 'skip' },
+        { selector: 'embed', format: 'skip' },
+        { selector: 'object', format: 'skip' },
+        { selector: 'canvas', format: 'skip' },
+        { selector: 'svg', format: 'skip' },
+        { selector: 'audio', format: 'skip' },
+        { selector: 'video', format: 'skip' },
 
         // 스타일 관련 클래스들 처리
         { selector: '.error', format: 'inline' },
@@ -89,8 +104,11 @@ class OptimizedJiraMCP {
         { selector: 'h5', format: 'heading', options: { uppercase: false } },
         { selector: 'h6', format: 'heading', options: { uppercase: false } },
 
-        // 단락 정리
+        // 기본 구조 요소들
+        { selector: 'table', format: 'dataTable' },
         { selector: 'p', format: 'block', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+        { selector: 'pre', format: 'pre' },
+        { selector: 'code', format: 'inlineTag' },
         { selector: 'br', format: 'lineBreak' }
       ],
       baseElements: {
@@ -100,9 +118,9 @@ class OptimizedJiraMCP {
       preserveNewlines: false,
       trimEmptyLines: true
     })
-    .replace(/\n\s*\n\s*\n/g, '\n\n') // 연속된 빈 줄 제거
+    .replace(/\n{3,}/g, '\n\n') // 3개 이상 연속된 빈 줄을 2개로
+    .replace(/\s*\n\s*/g, '\n') // 줄 바꿈 전후 공백 제거
     .replace(/\s+/g, ' ') // 연속된 공백을 하나로
-    .replace(/^\s+|\s+$/g, '') // 앞뒤 공백 제거
     .trim();
 
     // 긴 텍스트는 요약
@@ -277,9 +295,9 @@ class OptimizedJiraMCP {
     }
   }
 
-  async getIssue(issueKey, mode = 'standard') {
+  async getIssue(issueKey) {
     try {
-      const fields = this.getFieldsForMode(mode);
+      const fields = this.getDefaultFields();
       const result = await this.makeRequest(`/issue/${issueKey}`, 'GET', null, fields);
       // HTML 파싱된 간소화된 데이터만 반환
       return this.simplifyIssue(result);
@@ -288,9 +306,9 @@ class OptimizedJiraMCP {
     }
   }
 
-  async searchIssues(jql, maxResults = 25, mode = 'summary') {
+  async searchIssues(jql, maxResults = 25) {
     try {
-      const fields = this.getFieldsForMode(mode);
+      const fields = this.getDefaultFields();
       const encodedJql = encodeURIComponent(jql);
 
       let endpoint = `/search?jql=${encodedJql}&maxResults=${maxResults}`;
@@ -529,13 +547,7 @@ class OptimizedJiraMCP {
               inputSchema: {
                 type: 'object',
                 properties: {
-                  issueKey: { type: 'string', description: '이슈 키 (예: PROJ-123)' },
-                  mode: {
-                    type: 'string',
-                    description: '응답 모드: summary(최소), standard(기본), full(전체)',
-                    default: 'standard',
-                    enum: ['summary', 'standard', 'full']
-                  }
+                  issueKey: { type: 'string', description: '이슈 키 (예: PROJ-123)' }
                 },
                 required: ['issueKey']
               }
@@ -547,13 +559,7 @@ class OptimizedJiraMCP {
                 type: 'object',
                 properties: {
                   jql: { type: 'string', description: 'JQL 쿼리 문자열' },
-                  maxResults: { type: 'number', description: '최대 결과 수', default: 25 },
-                  mode: {
-                    type: 'string',
-                    description: '응답 모드: summary(최소-권장), standard(기본)',
-                    default: 'summary',
-                    enum: ['summary', 'standard']
-                  }
+                  maxResults: { type: 'number', description: '최대 결과 수', default: 25 }
                 },
                 required: ['jql']
               }
@@ -671,11 +677,11 @@ class OptimizedJiraMCP {
           break;
 
         case 'get_issue':
-          result = await this.getIssue(args.issueKey, args.mode);
+          result = await this.getIssue(args.issueKey);
           break;
 
         case 'search_issues':
-          result = await this.searchIssues(args.jql, args.maxResults, args.mode);
+          result = await this.searchIssues(args.jql, args.maxResults);
           break;
 
         case 'create_issue':
